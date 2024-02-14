@@ -3,17 +3,51 @@ use std::time::Duration;
 use crossterm::{execute, queue, cursor};
 use crossterm::terminal::{self};
 use crossterm::event::{read, Event, KeyEvent, KeyCode, KeyModifiers, poll};
+use crossterm::style::Print;
+
+struct Buffer {
+    main_text: String,
+}
+
+impl Buffer {
+    pub fn default() -> Self {
+        Self {
+            main_text: String::new(),
+        }
+    }
+
+    pub fn add_char(&mut self, c: char) {
+        self.main_text.push(c);
+    }
+
+    pub fn del_char(&mut self) {
+        self.main_text.pop();
+    }
+
+    pub fn del_word(&mut self) {
+        loop{
+            let Some(c) = self.main_text.pop() else { break };
+            if c == ' ' { break };
+        }
+    }
+
+    pub fn render(&mut self) -> &String{
+        &self.main_text
+    }
+}
 
 pub struct Editor {
     should_quit: bool,
     terminal: Terminal,
+    buffer: Buffer,
 }
 
 impl Editor {
     pub fn default() -> Self {
         Self { 
             should_quit: false, 
-            terminal: Terminal::default().expect("Failed to get terminal size")
+            terminal: Terminal::default(),
+            buffer: Buffer::default(),
         }
     }
 
@@ -23,6 +57,7 @@ impl Editor {
             if poll(Duration::from_millis(500)) ?{
                 let event = read()?;
                 self.handle_input(&event);
+                self.terminal.draw_screen(self.buffer.render())?;
             }
         }
         self.terminal.clean_up()?;
@@ -32,37 +67,23 @@ impl Editor {
     fn handle_input(&mut self, event: &Event) {
         match event {
             Event::Key(KeyEvent {code: KeyCode::Char('q'), modifiers: KeyModifiers::CONTROL, ..}) => self.should_quit = true, 
-            Event::Key(event)=> println!("{event:?} \r"),
+            Event::Key(KeyEvent {code: KeyCode::Char('h'), modifiers: KeyModifiers::CONTROL, ..}) => self.buffer.del_word(), 
+            Event::Key(KeyEvent {code: KeyCode::Backspace, ..})=> self.buffer.del_char(),
+            Event::Key(KeyEvent {code: KeyCode::Char(c), ..})=> self.buffer.add_char(*c),
             _ => print!("Unsupported event \r"),
         }
     }
-    // fn draw_rows(&self) {
-    //     for _ in 0..self.terminal.size().height {
-    //         println!("~\r");
-    //     }
-    // }
-
-   
-
-   
 }
 
 struct Terminal {
-    window_size: terminal::WindowSize,
     stdout: Stdout,
 }
 
 impl Terminal {
-    pub fn default() -> Result<Self, std::io::Error> {
-        let window_size_result = terminal::window_size()?;
-        Ok(Self {
-            window_size: window_size_result,
+    pub fn default() -> Self {
+        Self {
             stdout: io::stdout(),
-        })
-    }
-
-    pub fn size(&self) -> &terminal::WindowSize {
-        &self.window_size 
+        }
     }
 
     fn setup(&mut self) -> io::Result<()> {
@@ -80,6 +101,11 @@ impl Terminal {
     fn clean_up(&mut self) -> io::Result<()> {
         queue!(self.stdout, terminal::LeaveAlternateScreen)?;
         terminal::disable_raw_mode()?;
+        Ok(())
+    }
+
+    fn draw_screen(&mut self, text: &String) -> io::Result<()>{
+        execute!(self.stdout, terminal::Clear(terminal::ClearType::All), cursor::MoveTo(0, 0), Print(text))?;
         Ok(())
     }
 }
