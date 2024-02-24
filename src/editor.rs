@@ -147,7 +147,6 @@ impl Buffer {
     }
 
     pub fn render(&mut self) -> String {
-        let render = format!("{}{}", self.main_text, self.current);
-        render
+        format!("{}{}", self.main_text, self.current)
     }
 }
