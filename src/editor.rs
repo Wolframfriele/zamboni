@@ -1,11 +1,14 @@
+use std::cmp::min;
+use std::{char, fs};
+use std::io::{self, Stdout};
+use std::time::Duration;
+
 use crossterm::event::{poll, read, Event, KeyCode, KeyEvent, KeyModifiers};
 use crossterm::style::Print;
 use crossterm::terminal::{self};
 use crossterm::{cursor, execute};
-use std::cmp::min;
-use std::fs;
-use std::io::{self, Stdout};
-use std::time::Duration;
+
+use inflector::Inflector;
 
 struct Terminal {
     stdout: Stdout,
@@ -103,6 +106,7 @@ struct Buffer {
     main_text: String,
     current: String,
     spellcheck: Spellcheck,
+    capitalize_next: bool,
 }
 
 impl Buffer {
@@ -111,14 +115,25 @@ impl Buffer {
             main_text: String::new(),
             current: String::new(),
             spellcheck: Spellcheck::default(),
+            capitalize_next: true,
         }
     }
 
     pub fn add_char(&mut self, c: char) {
-        if c == ' ' {
-            self.main_text.push_str(&self.spellcheck.find_corrections(&self.current));
-            self.main_text.push_str(" ");
+        if c == ' ' || c == ',' || c == ':' || c == ';' {
+            let mut word = self.spellcheck.find_corrections(&self.current.to_lowercase());
+            if self.capitalize_next && self.current.len() > 1 {
+                word = word.to_title_case();
+                self.capitalize_next = false;
+            } 
+            self.main_text.push_str(&word);
+            self.main_text.push(c);
             self.current.clear();
+        } else if c == '.' || c == '?' || c == '!' {
+            self.main_text.push_str(&self.spellcheck.find_corrections(&self.current.to_lowercase()));
+            self.main_text.push(c);
+            self.current.clear();
+            self.capitalize_next = true;
         } else {
             self.current.push(c);
         }
@@ -162,7 +177,7 @@ struct Spellcheck {
 impl Spellcheck {
     pub fn default() -> Self {
         Self {
-            corpus: fs::read_to_string("big_wordlist.txt")
+            corpus: fs::read_to_string("b.txt")
                 .expect("Could not read the wordlist.")
                 .split_whitespace()
                 .map(str::to_string)
@@ -175,6 +190,7 @@ impl Spellcheck {
             return 0
         }
         let (word1, word2) = (word1.as_bytes(), word2.as_bytes());
+        
         let mut current: Vec<usize> = (0..=word1.len()).collect();
         let mut previous = current.clone();
 
@@ -214,6 +230,9 @@ impl Spellcheck {
                     closest_word = dict_word.clone();
                 }
             }
+        }
+        if closest_word == "i" {
+            return String::from("I")
         }
         closest_word.to_string()
     }
