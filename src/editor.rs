@@ -2,6 +2,8 @@ use crossterm::event::{poll, read, Event, KeyCode, KeyEvent, KeyModifiers};
 use crossterm::style::Print;
 use crossterm::terminal::{self};
 use crossterm::{cursor, execute};
+use std::cmp::min;
+use std::fs;
 use std::io::{self, Stdout};
 use std::time::Duration;
 
@@ -100,6 +102,7 @@ impl Editor {
 struct Buffer {
     main_text: String,
     current: String,
+    spellcheck: Spellcheck,
 }
 
 impl Buffer {
@@ -107,21 +110,22 @@ impl Buffer {
         Self {
             main_text: String::new(),
             current: String::new(),
+            spellcheck: Spellcheck::default(),
         }
     }
 
     pub fn add_char(&mut self, c: char) {
         if c == ' ' {
-            self.current.push(c);
-            self.main_text.push_str(&self.current);
+            self.main_text.push_str(&self.spellcheck.find_corrections(&self.current));
+            self.main_text.push_str(" ");
             self.current.clear();
-        } else{
+        } else {
             self.current.push(c);
         }
     }
 
     pub fn del_char(&mut self) {
-        if self.current.is_empty(){
+        if self.current.is_empty() {
             self.main_text.pop();
         } else {
             self.current.pop();
@@ -129,14 +133,14 @@ impl Buffer {
     }
 
     pub fn del_word(&mut self) {
-        if self.current.is_empty(){
+        if self.current.is_empty() {
             let mut space_counter = 0;
             loop {
                 let Some(c) = self.main_text.pop() else { break };
                 if c == ' ' {
                     space_counter += 1;
                 };
-                if space_counter == 2{
+                if space_counter == 2 {
                     self.main_text.push(' ');
                     break;
                 }
@@ -150,3 +154,68 @@ impl Buffer {
         format!("{}{}", self.main_text, self.current)
     }
 }
+
+struct Spellcheck {
+    corpus: Vec<String>,
+}
+
+impl Spellcheck {
+    pub fn default() -> Self {
+        Self {
+            corpus: fs::read_to_string("big_wordlist.txt")
+                .expect("Could not read the wordlist.")
+                .split_whitespace()
+                .map(str::to_string)
+                .collect(),
+        }
+    }
+
+    fn edit_distance(word1: &String, word2: &String) -> usize {
+        if word1 == word2 {
+            return 0
+        }
+        let (word1, word2) = (word1.as_bytes(), word2.as_bytes());
+        let mut current: Vec<usize> = (0..=word1.len()).collect();
+        let mut previous = current.clone();
+
+        for i in 1..=word2.len() {
+            previous.copy_from_slice(&current);
+            current[0] = i;
+            for j in 1..=word1.len() {
+                let mut min_cost = previous[j - 1];
+
+                if word1[j - 1] != word2[i - 1] {
+                    let insert = previous[j];
+                    let replace = previous[j - 1];
+                    let delete = current[j - 1];
+
+                    min_cost = min(insert, min(replace, delete)) + 1;
+                }
+                current[j] = min_cost;
+            }
+        }
+        current[word1.len()]
+    }
+
+    fn similarity_score(word1: &String, word2: &String) -> f32 {
+        1. - (Self::edit_distance(word1, word2)) as f32 / min(word1.len(), word2.len()) as f32
+    }
+
+    pub fn find_corrections(&self, word: &String) -> String {
+        let word_len = word.chars().count() as i32;
+        let mut closest_word = word.clone();
+        let mut closest_distance: f32 = 0.0;
+
+        for dict_word in &self.corpus {
+            if (dict_word.chars().count() as i32 - word_len).abs() <= 3{
+                let score = Self::similarity_score(dict_word, word);
+                if score > closest_distance {
+                    closest_distance = score;
+                    closest_word = dict_word.clone();
+                }
+            }
+        }
+        closest_word.to_string()
+    }
+}
+
