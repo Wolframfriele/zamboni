@@ -1,14 +1,12 @@
 use std::cmp::min;
-use std::{char, fs};
 use std::io::{self, Stdout};
 use std::time::Duration;
+use std::{char, fs};
 
 use crossterm::event::{poll, read, Event, KeyCode, KeyEvent, KeyModifiers};
 use crossterm::style::Print;
 use crossterm::terminal::{self};
 use crossterm::{cursor, execute};
-
-use inflector::Inflector;
 
 struct Terminal {
     stdout: Stdout,
@@ -97,7 +95,7 @@ impl Editor {
                 code: KeyCode::Char(c),
                 ..
             }) => self.buffer.add_char(*c),
-            _ => print!("Unsupported event \r"),
+            _ => (),
         }
     }
 }
@@ -121,16 +119,27 @@ impl Buffer {
 
     pub fn add_char(&mut self, c: char) {
         if c == ' ' || c == ',' || c == ':' || c == ';' {
-            let mut word = self.spellcheck.find_corrections(&self.current.to_lowercase());
-            if self.capitalize_next && self.current.len() > 1 {
-                word = word.to_title_case();
-                self.capitalize_next = false;
-            } 
-            self.main_text.push_str(&word);
+            let word = self
+                .spellcheck
+                .find_corrections(&self.current.to_lowercase());
+            
+            for character in word.chars() {
+                if self.capitalize_next && (self.current.len() > 1 || self.current == "I") {
+                    self.main_text.push(character.to_ascii_uppercase());
+                    self.capitalize_next = false;
+                } else {
+                    self.main_text.push(character);
+                }
+            }
+            
             self.main_text.push(c);
             self.current.clear();
         } else if c == '.' || c == '?' || c == '!' {
-            self.main_text.push_str(&self.spellcheck.find_corrections(&self.current.to_lowercase()));
+            self.main_text.push_str(
+                &self
+                    .spellcheck
+                    .find_corrections(&self.current.to_lowercase()),
+            );
             self.main_text.push(c);
             self.current.clear();
             self.capitalize_next = true;
@@ -177,7 +186,7 @@ struct Spellcheck {
 impl Spellcheck {
     pub fn default() -> Self {
         Self {
-            corpus: fs::read_to_string("b.txt")
+            corpus: fs::read_to_string("wordlist.txt")
                 .expect("Could not read the wordlist.")
                 .split_whitespace()
                 .map(str::to_string)
@@ -187,10 +196,10 @@ impl Spellcheck {
 
     fn edit_distance(word1: &String, word2: &String) -> usize {
         if word1 == word2 {
-            return 0
+            return 0;
         }
         let (word1, word2) = (word1.as_bytes(), word2.as_bytes());
-        
+
         let mut current: Vec<usize> = (0..=word1.len()).collect();
         let mut previous = current.clone();
 
@@ -213,17 +222,17 @@ impl Spellcheck {
         current[word1.len()]
     }
 
-    fn similarity_score(word1: &String, word2: &String) -> f32 {
-        1. - (Self::edit_distance(word1, word2)) as f32 / min(word1.len(), word2.len()) as f32
+    fn similarity_score(word1: &String, word2: &String) -> f64 {
+        1. - (Self::edit_distance(word1, word2)) as f64 / min(word1.len(), word2.len()) as f64
     }
 
     pub fn find_corrections(&self, word: &String) -> String {
         let word_len = word.chars().count() as i32;
         let mut closest_word = word.clone();
-        let mut closest_distance: f32 = 0.0;
+        let mut closest_distance: f64 = 0.0;
 
         for dict_word in &self.corpus {
-            if (dict_word.chars().count() as i32 - word_len).abs() <= 3{
+            if (dict_word.chars().count() as i32 - word_len).abs() <= 3 {
                 let score = Self::similarity_score(dict_word, word);
                 if score > closest_distance {
                     closest_distance = score;
@@ -232,9 +241,8 @@ impl Spellcheck {
             }
         }
         if closest_word == "i" {
-            return String::from("I")
+            return String::from("I");
         }
         closest_word.to_string()
     }
 }
-
