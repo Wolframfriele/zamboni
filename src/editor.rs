@@ -29,13 +29,12 @@ impl Editor {
         execute!(
             self.stdout,
             terminal::EnterAlternateScreen,
-            terminal::Clear(terminal::ClearType::All),
-            cursor::MoveTo(0, 0)
+            cursor::MoveTo(0, 0),
         )?;
         Ok(())
     }
 
-    fn clean_up(&mut self) -> io::Result<()> {
+    fn cleanup(&mut self) -> io::Result<()> {
         execute!(self.stdout, terminal::LeaveAlternateScreen)?;
         terminal::disable_raw_mode()?;
         Ok(())
@@ -94,7 +93,7 @@ impl Editor {
                 self.draw_screen(&self.buffer.render(), self.calculate_wpm())?;
             }
         }
-        self.clean_up()?;
+        self.cleanup()?;
         Ok(())
     }
 }
